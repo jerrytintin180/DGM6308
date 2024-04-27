@@ -19,10 +19,15 @@
 	<div class="row">
 		@for (var animalNumber = 0; animalNumber < shuffledAnimals.Count; animalNumber++)
 		{
+			@* To declare a variable for the number (sequence) that is written into the button
+				It is also used as the index of the temp list later created in ButtonClick function.
+			' For some reason without this line, directly use the variable animalNumbar above won't work.*@
+			var numberIndicator = animalNumber;
+
 			var animal = shuffledAnimals[animalNumber];
 			var uniqueDescription = $"Button #{animalNumber}";
 			<div class="col-3">
-				<button id="@animalNumber" @onclick="@(() => ButtonClick(animal, uniqueDescription, animalNumber))"
+				<button id="@animalNumber" @onclick="@(() => ButtonClick(animal, uniqueDescription, numberIndicator))"
 						type="button" class="btn btn-outline-dark">
 					<h1>@animal</h1>
 				</button>
@@ -30,20 +35,19 @@
 		}
 	</div>
 	<div class="row">
-		@*<h2>Time: @timeDisplay</h2>*@
-		<h2>Time Remain: @countdownTime</h2>
+		<h2>Remaining Time: @timeDisplay</h2>
 		<h2>Score: @score</h2>
 	</div>
 	<div class="row">
-		<h2>Matches found: @matchesFound</h2>
+		<h2>Boost Left/Earned: @powerLeft/@matchesFound</h2>
 	</div>
 
 	<div class="col-sm-6 btn-group" role="group">
 		<button type="button" class="btn btn-secondary" @onclick="@(() => addTime())">
-			Add Time (@useCount)
+			Boost Time! (@powerLeft)
 		</button>
 		<button type="button" class="btn btn-secondary" @onclick="@(() => addScore())" >
-			Add Score (@useCount)
+			Boost Score! (@powerLeft)
 		</button>
 	</div>
 	
@@ -63,7 +67,7 @@
 		"🐹","🐹",
 	};
 
-	List<string> animalEmoji1 = new List<string>()
+	List<string> animalEmojiEmpty = new List<string>()
 	{
 		"","",
 		"","",
@@ -78,112 +82,183 @@
 	List<string> shuffledAnimals = new List<string>();
 	List<string> shuffledAnimalsCopy = new List<string>();
 	int matchesFound = 0;
-	int useCount = 0;
+	int powerLeft = 0;
 	int score= 0;
 	Timer timer;
 	int tenthsOfSecondsElapsed = 0;
 	string timeDisplay;
-	int countdownTime = 30;
+	string lastAnimalFound = string.Empty;
+	string lastDescriptin = string.Empty;
 
+	// The following: last for the first picked and the latest for the second picked of the previous pair attempt.
+	int lastAnimalNumber = 0;
+	int latestAnimalNumber = 0;
+
+	bool matchState = false;
+	bool timeout = false;
+
+	/* When the page is loaded. */
 	protected override void OnInitialized()
 	{
 		timer = new Timer(100);
 		timer.Elapsed += Timer_Tick;
-
 		SetUpGame();
-
 	}
+
+	/* Setup Game function */
 	private void SetUpGame()
 	{
 		Random random = new Random();
+
+		//We use "shuffledAnimals" and "shuffledAnimalsCopy" to store the random list of each game, so clear them when setting up the game.
+		for (var i = 0; i < shuffledAnimals.Count; i++)
+		{
+			shuffledAnimals[i] = "";
+			shuffledAnimalsCopy[i] = "";
+		}
+
 		shuffledAnimals = animalEmoji
-	.OrderBy(item => random.Next())
+		.OrderBy(item => random.Next())
 		.ToList();
-		//shuffledAnimalsCopy = shuffledAnimals;
-		/*foreach (string animal in shuffledAnimals) {
-			shuffledAnimals = shuffledAnimals
-			.Select(a => a.Replace(animal, string.Empty))
-			.ToList();
-		}*/
 
+		//Create a shadow list that keeps tracks of the list of random animal order created.
+		shuffledAnimalsCopy = shuffledAnimals.ToList();
 
+		//Make our main list go empty for rendering the empty board.
+		shuffledAnimals = animalEmojiEmpty.ToList();
+
+		lastAnimalFound = string.Empty;
+		lastDescriptin = string.Empty;
+		matchState = false;
+		timeout = false;
 		matchesFound = 0;
-		tenthsOfSecondsElapsed = 0;
+		score = 0;
+		powerLeft = 0;
+
+		// Countdown timer gives 15 seconds.
+		tenthsOfSecondsElapsed = 150;
 	}
 
-	string lastAnimalFound = string.Empty;
-	string lastDescriptin = string.Empty;
-
-	/* User clicks animal buttons.
-		* Store the vallue clicked and see if matched. If not, clear the stored value.
-		* Also start the timer. */
+	/************* ButtonClick *********************
+		* Function upon user clicking animal buttons.
+		* (1) Store the vallue clicked and see if matched. If not, clear the stored value.
+		* (2) Also start the timer. 
+		************************************/
 	private void ButtonClick(string animal, string animalDescription, int number)
 	{
-		if (lastAnimalFound == string.Empty)
-		{
-			//shuffledAnimals = shuffledAnimalsCopy;
+		if (animal == "X")
+			return;
 
-			// First slection of the pair.
-			lastAnimalFound = animal;
-			lastDescriptin = animalDescription;
-			timer.Start();
-		}
-		else if ((lastAnimalFound == animal) && (animalDescription != lastDescriptin))
+		shuffledAnimals[number] = shuffledAnimalsCopy[number];
+
+		// Check if time runs out. It yes --there's a boolean variable value changing with timeoutTest()-- return out of the function.
+		timeoutTest();
+		if (timeout == true)
+			return;
+
+		if (lastAnimalFound == string.Empty )
 		{
-			// Match found. Reset for next pair.
+			// Upon a third click, clear out the two clicks that was unmatched before back into empty.
+			if (matchState == true)
+			{
+				shuffledAnimals[lastAnimalNumber] = string.Empty;
+				shuffledAnimals[latestAnimalNumber] = string.Empty;
+			}
+
+			// These variables mark a first pick/click in one match attempt.
+			lastAnimalFound = shuffledAnimals[number];
+			lastDescriptin = animalDescription;
+			lastAnimalNumber = number;
+			timer.Start();
+
+		}
+
+		// Check when having a match.
+		// Because now the game started out the buttons are using the list with empty strings, we write "shuffledAnimals[number]" now.
+		else if ((lastAnimalFound == shuffledAnimals[number]) && (animalDescription != lastDescriptin))
+		{
+
 			lastAnimalFound = string.Empty;
-			// Replace found animals with empty string to hide them.
+
+			// Replace found animals with X to mark matched.
 			shuffledAnimals = shuffledAnimals
-			.Select(a => a.Replace(animal, string.Empty))
+			.Select(a => a.Replace(shuffledAnimals[number], "X"))
 			.ToList();
 
+			shuffledAnimalsCopy = shuffledAnimalsCopy
+			.Select(a => a.Replace(shuffledAnimals[number], "X"))
+			.ToList();
+
+			matchState = false;
 			matchesFound++;
-			useCount++;
+			powerLeft++;
 			score = score + 50;
+
+			//Everytime with a match, check win-game condition.
 			if (matchesFound == 8)
 			{
 				timer.Stop();
 				timeDisplay += " - Play Again?";
-
 				SetUpGame();
 			}
 		}
+
+		// Check when user does not match.
 		else
 		{
-			// User selected a pair that don't match.
-			// Reset selection.
 			lastAnimalFound = string.Empty;
+			latestAnimalNumber = number;
+			matchState = true;
 		}
 	}
 
+	/* Timer tick function that uses InvokeAsync, and StateHasChanged to update UI if necessary. */
 	private void Timer_Tick(Object source, ElapsedEventArgs e)
 	{
 		InvokeAsync(() =>
 		{
-			tenthsOfSecondsElapsed++;
+			tenthsOfSecondsElapsed--;
 			timeDisplay = (tenthsOfSecondsElapsed / 10F)
 			.ToString("0.0s");
 			StateHasChanged();
 		});
 	}
 
-
+	/* boost the score: an onclick event function */
 	private void addScore(){
-		if (useCount > 0)
+		if (powerLeft > 0)
 		{
 			score = score + 100;
-			useCount--;
+			powerLeft--;
 		}
 	}
 
+	/* boost remaining time: an onclick event function */
 	private void addTime()
 	{
-		if (useCount > 0)
+		if (powerLeft > 0)
 		{
-			countdownTime += 5;
-			useCount--;
+			tenthsOfSecondsElapsed += 50;
+			powerLeft--;
 		}
 	}
 
+	/* A function checks if time runs out. */
+	private void timeoutTest()
+	{
+		if ((tenthsOfSecondsElapsed / 10F) <= 0)
+		{
+			timer.Stop();
+			timeDisplay += " - Sorry, your time ran out. Play Again?";
+			// Update UI display when necessary.
+			StateHasChanged();
+			lastAnimalFound = string.Empty;
+			lastDescriptin = string.Empty;
+			SetUpGame();
+			// This variable "timeout" helps break out ("return", actually) other function. It is written in other methods.
+			timeout = true;
+			return;
+		}
+	}
 
 }
